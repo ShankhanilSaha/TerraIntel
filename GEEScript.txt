@@ -1,0 +1,64 @@
+// 1. Define your region of interest (change coords to your area)
+var roi = ee.Geometry.Rectangle([86.5, 27.5, 87.0, 28.0]);  // [minLon, minLat, maxLon, maxLat]
+
+// 2. Load SRTM DEM
+var dem = ee.Image("USGS/SRTMGL1_003").select('elevation');
+
+// 3. Load Landsat 9 Surface Reflectance
+var landsat = ee.ImageCollection('LANDSAT/LC09/C02/T1_L2')
+  .filterBounds(roi)
+  .filterDate('2023-01-01', '2023-12-31')
+  .filter(ee.Filter.lt('CLOUD_COVER', 20))
+  .median();  // Median composite of images
+
+// Select B3, B4, B5 (Green, Red, NIR)
+var b3 = landsat.select('SR_B3');
+var b4 = landsat.select('SR_B4');
+var b5 = landsat.select('SR_B5');
+
+// 4. Preview layers
+Map.centerObject(roi, 10);
+Map.addLayer(dem, {min: 0, max: 4000, palette: ['white', 'brown']}, 'DEM');
+Map.addLayer(b3, {min: 0, max: 10000}, 'B3 - Green');
+
+// 5. Export to Google Drive
+
+Export.image.toDrive({
+  image: dem.clip(roi),
+  description: 'DEM_SRTM',
+  folder: 'GEE_exports',
+  fileNamePrefix: 'dem',
+  scale: 30,
+  region: roi,
+  maxPixels: 1e13
+});
+
+Export.image.toDrive({
+  image: b3.clip(roi),
+  description: 'L9_B3',
+  folder: 'GEE_exports',
+  fileNamePrefix: 'SR_B3',
+  scale: 30,
+  region: roi,
+  maxPixels: 1e13
+});
+
+Export.image.toDrive({
+  image: b4.clip(roi),
+  description: 'L9_B4',
+  folder: 'GEE_exports',
+  fileNamePrefix: 'SR_B4',
+  scale: 30,
+  region: roi,
+  maxPixels: 1e13
+});
+
+Export.image.toDrive({
+  image: b5.clip(roi),
+  description: 'L9_B5',
+  folder: 'GEE_exports',
+  fileNamePrefix: 'SR_B5',
+  scale: 30,
+  region: roi,
+  maxPixels: 1e13
+});
