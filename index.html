@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Strategy AI Test</title>
+</head>
+<body>
+  <h1>Strategic AI Planner</h1>
+
+  <label for="strategy">Select Strategy Mode:</label>
+  <select id="strategy">
+    <option value="stealth">Stealth</option>
+    <option value="fast">Fast</option>
+    <option value="loud">Loud</option>
+  </select>
+  <button onclick="generatePlans()">Generate Plans</button>
+
+  <h2>Generated Plans</h2>
+  <pre id="plans" style="white-space: pre-wrap; border: 1px solid #ccc; padding: 10px;"></pre>
+
+  <h2>Follow-up Chat</h2>
+  <input type="text" id="userInput" placeholder="Ask a follow-up..." style="width: 60%;">
+  <button onclick="sendMessage()">Send</button>
+  <div id="chatBox" style="margin-top: 10px;"></div>
+
+  <script>
+    let chatHistory = [];
+
+    async function generatePlans() {
+      const strategy = document.getElementById("strategy").value;
+
+      const res = await fetch("http://localhost:8000/generate-plans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ strategy_mode: strategy })
+      });
+
+      const data = await res.json();
+      document.getElementById("plans").textContent = data.plans;
+      chatHistory = data.chat_history;
+      document.getElementById("chatBox").innerHTML = "";
+    }
+
+    async function sendMessage() {
+      const userMessage = document.getElementById("userInput").value;
+      if (!userMessage) return;
+
+      const res = await fetch("http://localhost:8000/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_history: chatHistory,
+          user_message: userMessage
+        })
+      });
+
+      const data = await res.json();
+      chatHistory = data.chat_history;
+
+      const chatBox = document.getElementById("chatBox");
+      chatBox.innerHTML += `<p><strong>You:</strong> ${userMessage}</p>`;
+      chatBox.innerHTML += `<p><strong>AI:</strong> ${data.reply}</p><hr>`;
+      document.getElementById("userInput").value = "";
+    }
+  </script>
+</body>
+</html>
