@@ -1,9 +1,13 @@
 import numpy as np
 import pandas as pd
 import folium
+from folium.plugins import MarkerCluster
 import heapq
 import os
 from scipy.interpolate import CubicSpline
+import random
+import math
+from folium.features import DivIcon
 
 ### ----------------------- LOAD DATA -----------------------
 DATA_PATH = 'analysed_data/terrain_data.jsonl'  # Ensure this JSONL has lat, lon, elevation, slope, ndvi, etc.
@@ -54,20 +58,16 @@ ndvi_norm = normalize_grid(ndvi_grid)
 ### ----------------------- TACTICAL POINT DETECTION -----------------------
 
 def detect_hiding_spots(ndvi_norm, slope_norm):
-    # Focus on HIGH vegetation (NDVI) for hiding spots
-    # Dense vegetation provides better concealment
-    hiding_mask = (ndvi_norm > 0.6) & (slope_norm < 0.8)
+    # LOOSENED CRITERIA: Focus on higher vegetation (NDVI) for hiding spots
+    # Reduced threshold from 0.6 to 0.5 for NDVI
+    # Increased allowable slope from 0.8 to 0.9
+    hiding_mask = (ndvi_norm > 0.5) & (slope_norm < 0.9)
     return np.argwhere(hiding_mask)
 
 def detect_choke_points(elevation_norm, slope_norm):
     """
     Detect strategic choke points based on terrain features.
-    Choke points are narrow passages where terrain funnels movement.
-    
-    Strategic choke points have:
-    1. Elevation gradients that indicate terrain funnel effects
-    2. Moderate slope (still traversable)
-    3. Located in passages between higher terrain
+    LOOSENED CRITERIA for choke points
     """
     # Calculate gradient in both directions
     grad_y, grad_x = np.gradient(elevation_norm)
@@ -78,8 +78,8 @@ def detect_choke_points(elevation_norm, slope_norm):
     # Normalize gradient magnitude
     grad_mag_norm = normalize_grid(gradient_magnitude)
     
-    # Create mask for gradient changes - LOWERED THRESHOLD
-    high_gradient_mask = grad_mag_norm > 0.45  # Reduced from 0.6
+    # Create mask for gradient changes - FURTHER LOWERED THRESHOLD
+    high_gradient_mask = grad_mag_norm > 0.4  # Reduced from 0.45
     
     # Calculate local "corridor" effect - areas with high gradients on multiple sides
     corridor_mask = np.zeros_like(high_gradient_mask, dtype=bool)
@@ -88,7 +88,7 @@ def detect_choke_points(elevation_norm, slope_norm):
     for i in range(1, high_gradient_mask.shape[0]-1):
         for j in range(1, high_gradient_mask.shape[1]-1):
             # Skip if central point has too high slope (impassable) - INCREASED ALLOWABLE SLOPE
-            if slope_norm[i, j] > 0.8:  # Increased from 0.7
+            if slope_norm[i, j] > 0.9:  # Increased from 0.8
                 continue
                 
             # Get neighborhood
@@ -98,17 +98,17 @@ def detect_choke_points(elevation_norm, slope_norm):
             gradient_neighbor_count = np.sum(neighborhood) - neighborhood[1, 1]
             
             # Identify as corridor if high gradients on multiple sides
-            # REDUCED required neighbor count from 2 to 1
-            if gradient_neighbor_count >= 1:  # Reduced from 2
+            # No change to required neighbor count (already at minimum 1)
+            if gradient_neighbor_count >= 1:
                 corridor_mask[i, j] = True
     
-    # Further filter to identify true choke points - LOOSENED CRITERIA
-    choke_mask = corridor_mask & (slope_norm < 0.8) & (grad_mag_norm > 0.4)  # Removed lower slope bound, reduced gradient threshold
+    # Further filter to identify true choke points - FURTHER LOOSENED CRITERIA
+    choke_mask = corridor_mask & (slope_norm < 0.9) & (grad_mag_norm > 0.35)  # Reduced gradient threshold even more
     
     # Thin out choke points to avoid overcrowding
     # Use a more targeted approach with looser spacing
     thinned_mask = np.zeros_like(choke_mask)
-    min_distance = 3  # Reduced from 4
+    min_distance = 2  # Reduced from 3 to get more points
     
     # Find all potential choke points
     choke_points = np.argwhere(choke_mask)
@@ -137,10 +137,11 @@ def detect_choke_points(elevation_norm, slope_norm):
 
 def detect_checkpoints(elevation_norm, slope_norm, ndvi_norm):
     # Surveillance points need:
-    # 1. Medium to high elevation (for good visibility)
-    # 2. Low to moderate slope (to be able to stand/position)
-    # 3. Low to moderate vegetation (for better visibility)
-    checkpoint_mask = (elevation_norm > 0.6) & (slope_norm < 0.4) & (ndvi_norm < 0.5)
+    # LOOSENED CRITERIA:
+    # 1. Lowered elevation threshold from 0.6 to 0.5
+    # 2. Increased slope allowance from 0.4 to 0.5
+    # 3. Increased vegetation allowance from 0.5 to 0.6
+    checkpoint_mask = (elevation_norm > 0.5) & (slope_norm < 0.5) & (ndvi_norm < 0.6)
     return np.argwhere(checkpoint_mask)
 
 ### ----------------------- A* PATHFINDING -----------------------
@@ -148,12 +149,9 @@ def detect_checkpoints(elevation_norm, slope_norm, ndvi_norm):
 def heuristic(a, b):
     return np.linalg.norm(np.array(a) - np.array(b))
 
-def create_cost_grid(elevation_norm, slope_norm, ndvi_norm, path_type):
+def create_cost_grid(elevation_norm, slope_norm, ndvi_norm, path_type, randomness=0.0):
     """
-    Create different cost grids for different path types:
-    - easy: prefer low slope, avoid high elevation
-    - balanced: moderate weights for all factors
-    - tough: favor areas with high vegetation (potential hiding spots), prefer difficult terrain
+    Create different cost grids for different path types with optional randomness factor
     """
     # Initialize with NaN where original data was NaN
     cost_grid = np.full_like(elevation_norm, np.nan)
@@ -177,6 +175,15 @@ def create_cost_grid(elevation_norm, slope_norm, ndvi_norm, path_type):
         cost_grid[valid_mask] = (0.2 * slope_norm[valid_mask] + 
                                0.2 * elevation_norm[valid_mask] + 
                                0.6 * (1 - ndvi_norm[valid_mask]))  # Invert NDVI to make high vegetation preferable
+    
+    # Add randomness if specified
+    if randomness > 0 and valid_mask.any():
+        # Generate random values in the range [-randomness, randomness]
+        random_values = np.random.uniform(-randomness, randomness, size=cost_grid.shape)
+        # Apply random values only to valid cells
+        cost_grid[valid_mask] += random_values[valid_mask]
+        # Ensure no negative values
+        cost_grid[valid_mask] = np.maximum(0.01, cost_grid[valid_mask])
                                
     # Normalize the cost grid again to ensure values are between 0 and 1
     cost_grid = normalize_grid(cost_grid)
@@ -230,25 +237,79 @@ def astar(cost_grid, start, goal):
 
 ### ----------------------- FIND PATHS -----------------------
 
+# Generate multiple path start/end points for variety
+def generate_path_endpoints(min_lat_idx, min_lon_idx, max_lat_idx, max_lon_idx, num_paths=10):  # Changed from 50 to 10
+    """Generate a variety of start and end points for multiple paths"""
+    endpoints = []
+    
+    # First add the original path (furthest corners)
+    endpoints.append(((min_lat_idx, min_lon_idx), (max_lat_idx, max_lon_idx)))
+    
+    # Generate random start/end pairs with minimum distance requirement
+    min_distance = (max_lat_idx - min_lat_idx + max_lon_idx - min_lon_idx) * 0.3  # At least 30% of diagonal
+    
+    while len(endpoints) < num_paths:
+        # Generate random start and end points
+        start = (random.randint(min_lat_idx, max_lat_idx), 
+                random.randint(min_lon_idx, max_lon_idx))
+        end = (random.randint(min_lat_idx, max_lat_idx), 
+              random.randint(min_lon_idx, max_lon_idx))
+        
+        # Calculate distance between start and end
+        distance = math.sqrt((start[0] - end[0])**2 + (start[1] - end[1])**2)
+        
+        # Only add if distance is sufficient
+        if distance >= min_distance:
+            endpoints.append((start, end))
+    
+    return endpoints
+
 # Find valid start and end indices
 min_lat_idx = df['lat_idx'].min()
 min_lon_idx = df['lon_idx'].min()
 max_lat_idx = df['lat_idx'].max()
 max_lon_idx = df['lon_idx'].max()
 
-start = (min_lat_idx, min_lon_idx)
-end = (max_lat_idx, max_lon_idx)
+# Generate 10 different path endpoints instead of 50
+path_endpoints = generate_path_endpoints(min_lat_idx, min_lon_idx, max_lat_idx, max_lon_idx, num_paths=10)
 
-# Calculate paths for each type
-easy_cost_grid = create_cost_grid(elevation_norm, slope_norm, ndvi_norm, "easy")
-balanced_cost_grid = create_cost_grid(elevation_norm, slope_norm, ndvi_norm, "balanced")
-tough_cost_grid = create_cost_grid(elevation_norm, slope_norm, ndvi_norm, "tough")
+# Store all paths
+all_paths = {
+    "easy": [],
+    "balanced": [],
+    "tough": []
+}
 
-easy_path = astar(easy_cost_grid, start, end)
-balanced_path = astar(balanced_cost_grid, start, end)
-tough_path = astar(tough_cost_grid, start, end)
+# Calculate multiple paths for each type with slight randomness for variety
+for i, (start, end) in enumerate(path_endpoints):
+    path_id = f"path_{i+1}"
+    print(f"Calculating {path_id} ({i+1}/10)...")  # Updated to reflect 10 paths
 
-# Get start/end coordinates safely
+    # Add randomness factor that decreases with each type
+    # More randomness for easy paths, less for tough paths
+    easy_randomness = 0.2
+    balanced_randomness = 0.15
+    tough_randomness = 0.1
+    
+    # Create cost grids with randomness
+    easy_cost_grid = create_cost_grid(elevation_norm, slope_norm, ndvi_norm, "easy", randomness=easy_randomness)
+    balanced_cost_grid = create_cost_grid(elevation_norm, slope_norm, ndvi_norm, "balanced", randomness=balanced_randomness)
+    tough_cost_grid = create_cost_grid(elevation_norm, slope_norm, ndvi_norm, "tough", randomness=tough_randomness)
+
+    # Calculate paths
+    easy_path = astar(easy_cost_grid, start, end)
+    balanced_path = astar(balanced_cost_grid, start, end)
+    tough_path = astar(tough_cost_grid, start, end)
+    
+    # Store paths with their respective IDs if they exist
+    if easy_path:
+        all_paths["easy"].append({"id": f"easy_{i+1}", "path": easy_path, "start": start, "end": end})
+    if balanced_path:
+        all_paths["balanced"].append({"id": f"balanced_{i+1}", "path": balanced_path, "start": start, "end": end})
+    if tough_path:
+        all_paths["tough"].append({"id": f"tough_{i+1}", "path": tough_path, "start": start, "end": end})
+
+# Get coordinates for a point
 def get_lat_lon(idx_tuple):
     subset = df[(df.lat_idx == idx_tuple[0]) & (df.lon_idx == idx_tuple[1])][["lat", "lon"]]
     if not subset.empty:
@@ -256,74 +317,125 @@ def get_lat_lon(idx_tuple):
     else:
         return (None, None)
 
-start_lat, start_lon = get_lat_lon(start)
-end_lat, end_lon = get_lat_lon(end)
+### ----------------------- DETECT TACTICAL POINTS -----------------------
+
+# Detect all tactical points
+hiding_spots = detect_hiding_spots(ndvi_norm, slope_norm)
+choke_points = detect_choke_points(elevation_norm, slope_norm)
+surveillance_points = detect_checkpoints(elevation_norm, slope_norm, ndvi_norm)
+
+# Convert grid indices to coordinates
+hiding_coords = []
+for r, c in hiding_spots:
+    lat, lon = get_lat_lon((r, c))
+    if lat is not None and lon is not None:
+        hiding_coords.append({"lat": lat, "lon": lon, "type": "hiding", "grid_idx": (r, c)})
+
+choke_coords = []
+for r, c in choke_points:
+    lat, lon = get_lat_lon((r, c))
+    if lat is not None and lon is not None:
+        choke_coords.append({"lat": lat, "lon": lon, "type": "choke", "grid_idx": (r, c)})
+
+surveillance_coords = []
+for r, c in surveillance_points:
+    lat, lon = get_lat_lon((r, c))
+    if lat is not None and lon is not None:
+        surveillance_coords.append({"lat": lat, "lon": lon, "type": "surveillance", "grid_idx": (r, c)})
+
+# All tactical points
+all_tactical_points = hiding_coords + choke_coords + surveillance_coords
 
 ### ----------------------- MAPPING -----------------------
 
-m = folium.Map(location=[start_lat, start_lon], zoom_start=15)  # Adjusted zoom level
+m = folium.Map(location=[df['lat'].mean(), df['lon'].mean()], zoom_start=13)
 
-# Add start and end markers
-if start_lat is not None and start_lon is not None:
-    folium.Marker([start_lat, start_lon], tooltip="Start", icon=folium.Icon(color="green")).add_to(m)
-if end_lat is not None and end_lon is not None:
-    folium.Marker([end_lat, end_lon], tooltip="End", icon=folium.Icon(color="red")).add_to(m)
+# Add tactical point layers (visible by default)
+hiding_layer = folium.FeatureGroup(name="Hiding Spots", show=True)
+choke_layer = folium.FeatureGroup(name="Choke Points", show=True)
+surveillance_layer = folium.FeatureGroup(name="Surveillance Points", show=True)
 
-# Add tactical points to the map
-# Hiding Spots
-hiding = detect_hiding_spots(ndvi_norm, slope_norm)
-hiding_count = 0
-for r, c in hiding:
-    subset = df[(df.lat_idx == r) & (df.lon_idx == c)][["lat", "lon"]]
-    if not subset.empty:
-        lat, lon = subset.values[0]
-        tooltip = f"Hiding Spot\nLat: {lat:.5f}, Lon: {lon:.5f}"
-        folium.CircleMarker(
-            [lat, lon], radius=5, color="blue", fill=True, fill_opacity=0.5,
-            tooltip=tooltip
-        ).add_to(m)
-        hiding_count += 1
-
-# Choke Points
-choke = detect_choke_points(elevation_norm, slope_norm)
-choke_count = 0
-for r, c in choke:
-    subset = df[(df.lat_idx == r) & (df.lon_idx == c)][["lat", "lon"]]
-    if not subset.empty:
-        lat, lon = subset.values[0]
-        tooltip = f"Choke Point\nLat: {lat:.5f}, Lon: {lon:.5f}"
-        folium.CircleMarker(
-            [lat, lon], radius=5, color="orange", fill=True, fill_opacity=0.5,
-            tooltip=tooltip
-        ).add_to(m)
-        choke_count += 1
-
-# Surveillance Points
-checkpoints = detect_checkpoints(elevation_norm, slope_norm, ndvi_norm)
-checkpoint_count = 0
-for r, c in checkpoints:
-    subset = df[(df.lat_idx == r) & (df.lon_idx == c)][["lat", "lon"]]
-    if not subset.empty:
-        lat, lon = subset.values[0]
-        tooltip = f"Surveillance Point\nLat: {lat:.5f}, Lon: {lon:.5f}"
-        folium.CircleMarker(
-            [lat, lon], radius=5, color="purple", fill=True, fill_opacity=0.5,
-            tooltip=tooltip
-        ).add_to(m)
-        checkpoint_count += 1
-
-
-# Helper function to draw a path with smoothing
-def draw_path(path, color, label):
-    if not path:
-        return
+# Define a function to calculate distance between two points using Haversine formula
+def haversine_distance(lat1, lon1, lat2, lon2):
+    """Calculate the great-circle distance between two points on Earth in kilometers."""
+    # Convert decimal degrees to radians
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
     
-    # Get coordinates for path points
-    path_coords = []
+    # Haversine formula
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    r = 6371  # Radius of Earth in kilometers
+    return c * r
+
+# Store tactical points in their respective layers
+for point in hiding_coords:
+    folium.CircleMarker(
+        [point["lat"], point["lon"]],
+        radius=6,  # Smaller radius
+        color="blue",  # Ring color
+        fill=True,
+        fill_color="blue",  # Same as border color
+        fill_opacity=0.0,  # Transparent center
+        weight=2.5,  # Ring thickness
+        popup=f"Hiding Spot<br>Lat: {point['lat']:.5f}<br>Lon: {point['lon']:.5f}",
+        class_name='tactical-point'
+    ).add_to(hiding_layer)
+
+for point in choke_coords:
+    folium.CircleMarker(
+        [point["lat"], point["lon"]],
+        radius=6,
+        color="orange",
+        fill=True,
+        fill_color="orange",
+        fill_opacity=0.0,
+        weight=2.5,
+        popup=f"Choke Point<br>Lat: {point['lat']:.5f}<br>Lon: {point['lon']:.5f}",
+        class_name='tactical-point'
+    ).add_to(choke_layer)
+
+for point in surveillance_coords:
+    folium.CircleMarker(
+        [point["lat"], point["lon"]],
+        radius=6,
+        color="purple",
+        fill=True,
+        fill_color="purple",
+        fill_opacity=0.0,
+        weight=2.5,
+        popup=f"Surveillance Point<br>Lat: {point['lat']:.5f}<br>Lon: {point['lon']:.5f}",
+        class_name='tactical-point'
+    ).add_to(surveillance_layer)
+
+
+
+# Add layers to map
+hiding_layer.add_to(m)
+choke_layer.add_to(m)
+surveillance_layer.add_to(m)
+
+# Helper function to convert path to coordinates
+def path_to_coords(path):
+    coords = []
     for p in path:
         lat, lon = get_lat_lon(p)
         if lat is not None and lon is not None:
-            path_coords.append([lat, lon])
+            coords.append([lat, lon])
+    return coords
+
+# Helper function to draw a path with smoothing
+def draw_path(path_dict, color, path_type, opacity=0.8):
+    """Draw a path with given color, type and opacity"""
+    path = path_dict["path"]
+    path_id = path_dict["id"]
+    
+    if not path:
+        return None
+    
+    # Get coordinates for path points
+    path_coords = path_to_coords(path)
     
     if len(path_coords) > 2:
         # Extract coordinates for spline interpolation
@@ -344,42 +456,199 @@ def draw_path(path, color, label):
         smooth_path = [[lat, lon] for lat, lon in zip(smooth_lats, smooth_lons)]
         
         # Draw the smooth path
-        folium.PolyLine(
+        polyline = folium.PolyLine(
             smooth_path, 
             color=color, 
             weight=3.5, 
-            opacity=0.8,
-            tooltip=label
-        ).add_to(m)
+            opacity=opacity,
+            tooltip=f"{path_type.capitalize()} Path {path_id}",
+            name=path_id
+        )
+        
+        return polyline
     else:
         # If not enough points for spline, draw direct path
-        folium.PolyLine(
+        polyline = folium.PolyLine(
             path_coords, 
             color=color, 
             weight=3.5,
-            tooltip=label
-        ).add_to(m)
+            opacity=opacity,
+            tooltip=f"{path_type.capitalize()} Path {path_id}",
+            name=path_id
+        )
+        
+        return polyline
 
-# Draw all three paths
-draw_path(easy_path, "green", "Easy Path")
-draw_path(balanced_path, "blue", "Balanced Path")
-draw_path(tough_path, "red", "Tough Path (Enemy Route)")
+# Create path feature groups
+easy_paths_group = folium.FeatureGroup(name="Easy Paths", show=True)
+balanced_paths_group = folium.FeatureGroup(name="Balanced Paths", show=True)
+tough_paths_group = folium.FeatureGroup(name="Tough/Enemy Paths", show=True)
+
+# Draw paths with appropriate opacity
+# Tough paths are fully opaque, others are translucent by default
+for path_dict in all_paths["easy"]:
+    path_layer = draw_path(path_dict, "green", "Easy", opacity=0.3)
+    if path_layer:
+        path_layer.add_to(easy_paths_group)
+
+for path_dict in all_paths["balanced"]:
+    path_layer = draw_path(path_dict, "blue", "Balanced", opacity=0.3)
+    if path_layer:
+        path_layer.add_to(balanced_paths_group)
+
+for path_dict in all_paths["tough"]:
+    path_layer = draw_path(path_dict, "red", "Tough", opacity=0.8)  # Fully opaque
+    if path_layer:
+        path_layer.add_to(tough_paths_group)
+
+# Add path groups to map
+easy_paths_group.add_to(m)
+balanced_paths_group.add_to(m)
+tough_paths_group.add_to(m)
+
+# Add layer control
+folium.LayerControl().add_to(m)
+
+# Generate custom JavaScript for interactivity
+js_function = """
+// Create map for storing path data
+const pathData = {};
+
+// Store all tactical points
+const tacticalPoints = {};
+
+// Function to calculate distance between two points in kilometers
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Radius of the Earth in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
+
+// Function to check if a point is within distance of a path
+function isPointNearPath(point, pathCoords, maxDistanceKm) {
+    for (const pathPoint of pathCoords) {
+        const distance = calculateDistance(
+            point.lat, point.lon, 
+            pathPoint[0], pathPoint[1]
+        );
+        if (distance <= maxDistanceKm) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Function to reset all paths and points
+function resetAllPaths() {
+    // Reset all paths to translucent except tough paths
+    Object.keys(pathData).forEach(pathId => {
+        const path = pathData[pathId];
+        if (pathId.startsWith('easy') || pathId.startsWith('balanced')) {
+            path.setStyle({opacity: 0.3});
+        } else if (pathId.startsWith('tough')) {
+            path.setStyle({opacity: 0.8});
+        }
+    });
+    
+    // Hide all tactical points
+    document.querySelectorAll('.tactical-point').forEach(marker => {
+        marker.style.display = 'none';
+    });
+}
+
+// Function to handle path click
+function handlePathClick(e) {
+    const pathId = e.target.options.name;
+    const pathCoords = e.target.getLatLngs().map(ll => [ll.lat, ll.lng]);
+    
+    // Reset all paths first
+    resetAllPaths();
+    
+    // Make clicked path fully opaque
+    e.target.setStyle({opacity: 1.0});
+    
+    // Show only tactical points within 5km of this path
+    Object.keys(tacticalPoints).forEach(pointId => {
+        const point = tacticalPoints[pointId];
+        const nearPath = isPointNearPath(point, pathCoords, 5);
+        
+        if (nearPath) {
+            document.getElementById(pointId).style.display = 'block';
+        } else {
+            document.getElementById(pointId).style.display = 'none';
+        }
+    });
+}
+
+// Add click handlers to all paths
+document.addEventListener('DOMContentLoaded', function() {
+    // Registry for all path polylines
+    const polylines = document.querySelectorAll('path.leaflet-interactive');
+    
+    polylines.forEach(function(polyline) {
+        if (polyline._leaflet_id) {
+            // Add click handler
+            const leafletObj = window.map._layers[polyline._leaflet_id];
+            if (leafletObj && leafletObj.options && leafletObj.options.name) {
+                const pathId = leafletObj.options.name;
+                pathData[pathId] = leafletObj;
+                leafletObj.on('click', handlePathClick);
+            }
+        }
+    });
+
+    // Find all tactical point markers
+    const markers = document.querySelectorAll('.leaflet-marker-icon:not(.leaflet-div-icon)');
+    markers.forEach(function(marker) {
+        if (marker._leaflet_id) {
+            const markerId = 'tactical-point-' + marker._leaflet_id;
+            marker.id = markerId;
+            marker.classList.add('tactical-point');
+            marker.style.display = 'none';  // Hide initially
+            
+            // Try to get coordinates
+            const leafletObj = window.map._layers[marker._leaflet_id];
+            if (leafletObj && leafletObj._latlng) {
+                tacticalPoints[markerId] = {
+                    lat: leafletObj._latlng.lat,
+                    lon: leafletObj._latlng.lng
+                };
+            }
+        }
+    });
+});
+"""
+
+# Add the JavaScript to the map
+m.get_root().html.add_child(folium.Element(f"""
+<script>
+window.map = {m.get_name()};
+{js_function}
+</script>
+"""))
 
 # Add legend to the map
 legend_html = '''
 <div style="position: fixed; 
-     bottom: 50px; right: 50px; width: 180px; height: 210px; 
+     bottom: 50px; right: 50px; width: 200px; height: 230px; 
      border:2px solid grey; z-index:9999; font-size:14px;
      background-color:white; padding: 10px;
      ">
      <p><strong>Path Types</strong></p>
-     <p><span style="color:green; font-weight:bold;">●</span> Easy Path</p>
-     <p><span style="color:blue; font-weight:bold;">●</span> Balanced Path</p>
-     <p><span style="color:red; font-weight:bold;">●</span> Tough/Enemy Path</p>
+     <p><span style="color:green; font-weight:bold;">●</span> Easy Path (Click to select)</p>
+     <p><span style="color:blue; font-weight:bold;">●</span> Balanced Path (Click to select)</p>
+     <p><span style="color:red; font-weight:bold;">●</span> Tough/Enemy Path (Click to select)</p>
      <hr>
      <p><span style="color:blue; font-weight:bold;">●</span> Hiding Spot</p>
      <p><span style="color:orange; font-weight:bold;">●</span> Choke Point</p>
      <p><span style="color:purple; font-weight:bold;">●</span> Surveillance Point</p>
+     <hr>
+     <p><small><i>Click any path to show tactical points within 5km</i></small></p>
 </div>
 '''
 m.get_root().html.add_child(folium.Element(legend_html))
@@ -398,15 +667,22 @@ print("\n✅ Terrain Analysis Complete!")
 print("----------------------------")
 print(f"Map generated at: outputs/map.html")
 print(f"Tactical Points Detected:")
-print(f"  - Hiding Spots: {hiding_count}")
-print(f"  - Choke Points: {choke_count}")
-print(f"  - Surveillance Points: {checkpoint_count}")
+print(f"  - Hiding Spots: {len(hiding_coords)}")
+print(f"  - Choke Points: {len(choke_coords)}")
+print(f"  - Surveillance Points: {len(surveillance_coords)}")
 print(f"Paths Generated:")
-print(f"  - Green: Easy path ({len(easy_path)} points)")
-print(f"  - Blue: Balanced path ({len(balanced_path)} points)")
-print(f"  - Red: Tough path ({len(tough_path)} points, potential enemy route)")
+print(f"  - Green: Easy paths ({len(all_paths['easy'])} paths)")
+print(f"  - Blue: Balanced paths ({len(all_paths['balanced'])} paths)")
+print(f"  - Red: Tough paths ({len(all_paths['tough'])} paths, potential enemy routes)")
+print("  - Total: {0} paths".format(len(all_paths['easy']) + len(all_paths['balanced']) + len(all_paths['tough'])))
+print("----------------------------")
+print("Interactive features:")
+print("  - Click on any path to highlight it and show nearby tactical points")
+print("  - Only tactical points within 5km of the selected path will be visible")
+print("  - By default, only tough/enemy paths are fully visible")
 print("----------------------------")
 
+### -----------------------
 ### ----------------------- SAVE TACTICAL DATA -----------------------
 import json
 
