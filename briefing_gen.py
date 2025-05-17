@@ -2,7 +2,7 @@ import json
 import requests
 import os
 
-# Constants
+# === Constants ===
 API_KEY = "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"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL = "llama3-70b-8192"
@@ -13,6 +13,7 @@ HEADERS = {
 }
 
 
+# === Load Inputs ===
 def load_inputs():
     with open("outputs/tactical_data.json") as f:
         tactical_data = json.load(f)
@@ -27,6 +28,7 @@ def load_inputs():
     return tactical_data, terrain_data, map_html
 
 
+# === Strategy Mode Selection ===
 def get_strategy_mode():
     options = ["stealth", "fast", "loud"]
     print("Select a strategy mode:")
@@ -40,6 +42,7 @@ def get_strategy_mode():
     return options[int(choice) - 1]
 
 
+# === Prompt Builder ===
 def build_prompt(tactical_data, terrain_data, map_html, strategy_mode):
     prompt = f"""
 You are an advanced military strategy assistant AI.
@@ -72,13 +75,11 @@ Label the plans as PLAN 1 through PLAN 5. Each should be clear, detailed, and ac
     return prompt
 
 
-def get_war_strategy(prompt):
+# === LLM API Call ===
+def get_chat_response(chat_history):
     body = {
         "model": MODEL,
-        "messages": [
-            {"role": "system", "content": "You are a strategic military planner AI."},
-            {"role": "user", "content": prompt}
-        ],
+        "messages": chat_history,
         "temperature": 0.7
     }
 
@@ -87,6 +88,7 @@ def get_war_strategy(prompt):
     return response.json()["choices"][0]["message"]["content"]
 
 
+# === Main Flow ===
 def main():
     if not API_KEY:
         raise EnvironmentError("GROQ_API_KEY not found in environment.")
@@ -94,10 +96,34 @@ def main():
     tactical_data, terrain_data, map_html = load_inputs()
     strategy_mode = get_strategy_mode()
     prompt = build_prompt(tactical_data, terrain_data, map_html, strategy_mode)
-    strategy = get_war_strategy(prompt)
 
-    print("\n==== STRATEGIC WAR PLANS ====")
-    print(strategy)
+    chat_history = [
+        {"role": "system", "content": "You are a strategic military planner AI."},
+        {"role": "user", "content": prompt}
+    ]
+
+    # Initial strategic plan generation
+    response = get_chat_response(chat_history)
+    print("\n==== STRATEGIC WAR PLANS ====\n")
+    print(response)
+    chat_history.append({"role": "assistant", "content": response})
+
+    # Start interactive follow-up chat
+    print("\nYou can now ask follow-up questions about any plan. Type 'exit' to quit.\n")
+    try:
+        while True:
+            user_input = input(">> ").strip()
+            if user_input.lower() in {"exit", "quit"}:
+                print("Exiting chat.")
+                break
+
+            chat_history.append({"role": "user", "content": user_input})
+            reply = get_chat_response(chat_history)
+            chat_history.append({"role": "assistant", "content": reply})
+            print("\n" + reply + "\n")
+
+    except KeyboardInterrupt:
+        print("\nExiting due to keyboard interrupt.")
 
 
 if __name__ == "__main__":
