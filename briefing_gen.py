@@ -1,5 +1,6 @@
 import json
 import requests
+import os
 
 # Constants
 API_KEY = "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"
