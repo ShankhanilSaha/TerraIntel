@@ -1,3 +1,6 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import json
 import requests
 import os
@@ -12,8 +15,26 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
+app = FastAPI()
 
-# === Load Inputs ===
+# Enable CORS for frontend testing
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Use specific domains in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# === Request Models ===
+class StrategyRequest(BaseModel):
+    strategy_mode: str
+
+class ChatRequest(BaseModel):
+    chat_history: list
+    user_message: str
+
+# === Helper Functions ===
 def load_inputs():
     with open("outputs/tactical_data.json") as f:
         tactical_data = json.load(f)
@@ -27,22 +48,6 @@ def load_inputs():
 
     return tactical_data, terrain_data, map_html
 
-
-# === Strategy Mode Selection ===
-def get_strategy_mode():
-    options = ["stealth", "fast", "loud"]
-    print("Select a strategy mode:")
-    for i, option in enumerate(options, 1):
-        print(f"{i}. {option.capitalize()}")
-
-    choice = input("Enter the number of your choice: ").strip()
-    while choice not in ["1", "2", "3"]:
-        choice = input("Invalid choice. Enter 1, 2, or 3: ").strip()
-
-    return options[int(choice) - 1]
-
-
-# === Prompt Builder ===
 def build_prompt(tactical_data, terrain_data, map_html, strategy_mode):
     prompt = f"""
 You are an advanced military strategy assistant AI.
@@ -74,8 +79,6 @@ Label the plans as PLAN 1 through PLAN 5. Each should be clear, detailed, and ac
 """
     return prompt
 
-
-# === LLM API Call ===
 def get_chat_response(chat_history):
     body = {
         "model": MODEL,
@@ -87,44 +90,48 @@ def get_chat_response(chat_history):
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]
 
-
-# === Main Flow ===
-def main():
-    if not API_KEY:
-        raise EnvironmentError("GROQ_API_KEY not found in environment.")
-
-    tactical_data, terrain_data, map_html = load_inputs()
-    strategy_mode = get_strategy_mode()
-    prompt = build_prompt(tactical_data, terrain_data, map_html, strategy_mode)
-
-    chat_history = [
-        {"role": "system", "content": "You are a strategic military planner AI."},
-        {"role": "user", "content": prompt}
-    ]
-
-    # Initial strategic plan generation
-    response = get_chat_response(chat_history)
-    print("\n==== STRATEGIC WAR PLANS ====\n")
-    print(response)
-    chat_history.append({"role": "assistant", "content": response})
-
-    # Start interactive follow-up chat
-    print("\nYou can now ask follow-up questions about any plan. Type 'exit' to quit.\n")
+# === API Endpoints ===
+@app.post("/generate-plans")
+def generate_plans(request: StrategyRequest):
     try:
-        while True:
-            user_input = input(">> ").strip()
-            if user_input.lower() in {"exit", "quit"}:
-                print("Exiting chat.")
-                break
+        tactical_data, terrain_data, map_html = load_inputs()
+        prompt = build_prompt(tactical_data, terrain_data, map_html, request.strategy_mode)
 
-            chat_history.append({"role": "user", "content": user_input})
-            reply = get_chat_response(chat_history)
-            chat_history.append({"role": "assistant", "content": reply})
-            print("\n" + reply + "\n")
+        chat_history = [
+            {"role": "system", "content": "You are a strategic military planner AI."},
+            {"role": "user", "content": prompt}
+        ]
 
-    except KeyboardInterrupt:
-        print("\nExiting due to keyboard interrupt.")
+        response = get_chat_response(chat_history)
+        chat_history.append({"role": "assistant", "content": response})
 
+        return {
+            "plans": response,
+            "chat_history": chat_history
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-if __name__ == "__main__":
-    main()
+@app.post("/chat")
+def continue_chat(request: ChatRequest):
+    try:
+        print("Received user message:", request.user_message)
+        print("Chat history length:", len(request.chat_history))
+
+        updated_history = request.chat_history + [
+            {"role": "user", "content": request.user_message}
+        ]
+
+        reply = get_chat_response(updated_history)
+        updated_history.append({"role": "assistant", "content": reply})
+
+        print("Reply from model:", reply[:200])  # Preview only
+
+        return {
+            "reply": reply,
+            "chat_history": updated_history
+        }
+    except Exception as e:
+        print("Error in /chat:", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
