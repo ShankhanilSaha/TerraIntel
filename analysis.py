@@ -7,7 +7,7 @@ import os
 from scipy.interpolate import CubicSpline
 
 ### ----------------------- LOAD DATA -----------------------
-DATA_PATH = 'terrain_data.jsonl'  # Ensure this JSONL has lat, lon, elevation, slope, ndvi, etc.
+DATA_PATH = 'analysed_data/terrain_data.jsonl'  # Ensure this JSONL has lat, lon, elevation, slope, ndvi, etc.
 df = pd.read_json(DATA_PATH, lines=True)
 
 ### ----------------------- GRID CONVERSION -----------------------
