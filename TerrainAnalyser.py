@@ -4,15 +4,24 @@ from rasterio.transform import xy
 from rasterio.enums import Resampling
 from scipy.ndimage import sobel
 import json
+import os
 
-dem_file = "dem.TIF"
-band3_file = "SR_B3.TIF"  # Green
-band4_file = "SR_B4.TIF"  # Red
-band5_file = "SR_B5.TIF"  # NIR
-output_file = "terrain_data.jsonl"  # Output file
+# Define input and output directories
+project_dir = os.getcwd()
+maps_dir = os.path.join(project_dir, "maps")
+output_dir = os.path.join(project_dir, "analysed_data")
+os.makedirs(output_dir, exist_ok=True)  # Create output directory if it doesn't exist
 
+# Input files
+dem_file = os.path.join(maps_dir, "dem.TIF")
+band3_file = os.path.join(maps_dir, "SR_B3.TIF")  # Green
+band4_file = os.path.join(maps_dir, "SR_B4.TIF")  # Red
+band5_file = os.path.join(maps_dir, "SR_B5.TIF")  # NIR
 
-#Compute slope and aspect from DEM
+# Output file
+output_file = os.path.join(output_dir, "terrain_data.jsonl")
+
+# Compute slope and aspect from DEM
 def compute_slope_aspect(dem_array):
     dx = sobel(dem_array, axis=1, mode='constant') / 8.0
     dy = sobel(dem_array, axis=0, mode='constant')
@@ -22,8 +31,7 @@ def compute_slope_aspect(dem_array):
     aspect = np.where(aspect < 0, 90.0 - aspect, 360.0 - aspect + 90.0)
     return slope, aspect
 
-
-#Load DEM and calculate slope & aspect
+# Load DEM and calculate slope & aspect
 with rasterio.open(dem_file) as dem_src:
     dem = dem_src.read(1, resampling=Resampling.bilinear)
     transform = dem_src.transform
@@ -31,7 +39,7 @@ with rasterio.open(dem_file) as dem_src:
     dem = np.where(dem == nodata, np.nan, dem)
     slope, aspect = compute_slope_aspect(dem)
 
-#Load Landsat Surface Reflectance bands
+# Load Landsat Surface Reflectance bands
 with rasterio.open(band3_file) as b3, \
         rasterio.open(band4_file) as b4, \
         rasterio.open(band5_file) as b5:
@@ -39,19 +47,20 @@ with rasterio.open(band3_file) as b3, \
     red = b4.read(1).astype("float32")
     nir = b5.read(1).astype("float32")
 
-#Calculate NDVI and NDWI
+# Calculate NDVI and NDWI
 np.seterr(divide='ignore', invalid='ignore')
 ndvi = (nir - red) / (nir + red)
 ndwi = (green - nir) / (green + nir)
 
-#Export data to JSONL
+# Export data to JSONL
 step = 10  # controls sampling density
 
 with open(output_file, "w") as f:
     for row in range(0, dem.shape[0], step):
         for col in range(0, dem.shape[1], step):
             elev = dem[row, col]
-            if np.isnan(elev): continue
+            if np.isnan(elev):
+                continue
 
             lon, lat = xy(transform, row, col)
             data = {
