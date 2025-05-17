@@ -3,7 +3,7 @@ import json
 import requests
 
 # Constants
-API_KEY = os.getenv("GROQ_API_KEY")
+API_KEY = "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"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL = "llama3-70b-8192"
 
@@ -13,7 +13,7 @@ HEADERS = {
 }
 
 def load_inputs():
-    with open("analysed_data/tactical_data_path.json") as f:
+    with open("outputs/tactical_data.json") as f:
         tactical_data = json.load(f)
 
     with open("analysed_data/terrain_data.jsonl") as f:
