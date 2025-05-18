@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 load_dotenv()
 
+
 # === Constants ===
 API_KEY = "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"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -84,6 +85,13 @@ def run_cli_mode():
     strategy_mode = input("> ").strip().lower()
     if strategy_mode not in ["stealthy", "fast", "loud"]:
         output.append("Invalid strategy mode. Defaulting to 'stealthy'.")
+def main():
+    tactical_data, terrain_data, map_html = load_inputs()
+
+    print("Choose your strategy mode (stealthy / fast / loud):")
+    strategy_mode = input("> ").strip().lower()
+    if strategy_mode not in ["stealthy", "fast", "loud"]:
+        print("Invalid strategy mode. Defaulting to 'stealthy'.")
         strategy_mode = "stealthy"
 
     prompt = build_prompt(tactical_data, terrain_data, map_html, strategy_mode)
@@ -93,26 +101,40 @@ def run_cli_mode():
         {"role": "user", "content": prompt}
     ]
 
+
     output.append("\nGenerating war plans... please wait...\n")
     plans_response = get_chat_response(chat_history)
     chat_history.append({"role": "assistant", "content": plans_response})
 
     output.append(plans_response)
     output.append("\n--- War plans generated. You can now chat with the AI. Type 'exit' to quit. ---\n")
+    print("\nGenerating war plans... please wait...\n")
+    plans_response = get_chat_response(chat_history)
+    chat_history.append({"role": "assistant", "content": plans_response})
+
+    print(plans_response)
+    print("\n--- War plans generated. You can now chat with the AI. Type 'exit' to quit. ---\n")
+
 
     # Chat loop
     while True:
         user_message = input("You: ").strip()
+
         output.append(f"You: {user_message}")
         
         if user_message.lower() == "exit":
             output.append("Exiting chat. Goodbye!")
+
+        if user_message.lower() == "exit":
+            print("Exiting chat. Goodbye!")
+
             break
 
         chat_history.append({"role": "user", "content": user_message})
 
         try:
             reply = get_chat_response(chat_history)
+
             output.append(f"AI: {reply}\n")
             chat_history.append({"role": "assistant", "content": reply})
         except Exception as e:
@@ -204,3 +226,12 @@ if __name__ == "__main__":
     # If run directly, use CLI mode
     output, _ = run_cli_mode()
     print(output) 
+
+            print(f"AI: {reply}\n")
+            chat_history.append({"role": "assistant", "content": reply})
+        except Exception as e:
+            print(f"Error during chat response: {e}")
+            break
+
+if __name__ == "__main__":
+    main()

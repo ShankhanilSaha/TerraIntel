@@ -36,6 +36,7 @@ for _, row in df.iterrows():
     slope_grid[r, c] = row["slope"]
     ndvi_grid[r, c] = row["ndvi"]
 
+
 ### ----------------------- NORMALIZE TERRAIN DATA -----------------------
 
 def normalize_grid(grid):
@@ -50,10 +51,12 @@ def normalize_grid(grid):
             result[valid_mask] = (valid_values - min_val) / (max_val - min_val)
     return result
 
+
 # Normalize terrain data
 elevation_norm = normalize_grid(elevation_grid)
 slope_norm = normalize_grid(slope_grid)
 ndvi_norm = normalize_grid(ndvi_grid)
+
 
 ### ----------------------- TACTICAL POINT DETECTION -----------------------
 
@@ -64,6 +67,7 @@ def detect_hiding_spots(ndvi_norm, slope_norm):
     hiding_mask = (ndvi_norm > 0.5) & (slope_norm < 0.9)
     return np.argwhere(hiding_mask)
 
+
 def detect_choke_points(elevation_norm, slope_norm):
     """
     Detect strategic choke points based on terrain features.
@@ -71,69 +75,70 @@ def detect_choke_points(elevation_norm, slope_norm):
     """
     # Calculate gradient in both directions
     grad_y, grad_x = np.gradient(elevation_norm)
-    
+
     # Calculate magnitude of gradient
-    gradient_magnitude = np.sqrt(grad_x**2 + grad_y**2)
-    
+    gradient_magnitude = np.sqrt(grad_x ** 2 + grad_y ** 2)
+
     # Normalize gradient magnitude
     grad_mag_norm = normalize_grid(gradient_magnitude)
-    
+
     # Create mask for gradient changes - FURTHER LOWERED THRESHOLD
     high_gradient_mask = grad_mag_norm > 0.4  # Reduced from 0.45
-    
+
     # Calculate local "corridor" effect - areas with high gradients on multiple sides
     corridor_mask = np.zeros_like(high_gradient_mask, dtype=bool)
-    
+
     # Examine 3×3 neighborhoods to find points with high gradients on multiple sides
-    for i in range(1, high_gradient_mask.shape[0]-1):
-        for j in range(1, high_gradient_mask.shape[1]-1):
+    for i in range(1, high_gradient_mask.shape[0] - 1):
+        for j in range(1, high_gradient_mask.shape[1] - 1):
             # Skip if central point has too high slope (impassable) - INCREASED ALLOWABLE SLOPE
             if slope_norm[i, j] > 0.9:  # Increased from 0.8
                 continue
-                
+
             # Get neighborhood
-            neighborhood = high_gradient_mask[i-1:i+2, j-1:j+2]
-            
+            neighborhood = high_gradient_mask[i - 1:i + 2, j - 1:j + 2]
+
             # Count high gradient neighbors
             gradient_neighbor_count = np.sum(neighborhood) - neighborhood[1, 1]
-            
+
             # Identify as corridor if high gradients on multiple sides
             # No change to required neighbor count (already at minimum 1)
             if gradient_neighbor_count >= 1:
                 corridor_mask[i, j] = True
-    
+
     # Further filter to identify true choke points - FURTHER LOOSENED CRITERIA
     choke_mask = corridor_mask & (slope_norm < 0.9) & (grad_mag_norm > 0.35)  # Reduced gradient threshold even more
-    
+
     # Thin out choke points to avoid overcrowding
     # Use a more targeted approach with looser spacing
     thinned_mask = np.zeros_like(choke_mask)
     min_distance = 2  # Reduced from 3 to get more points
-    
+
     # Find all potential choke points
     choke_points = np.argwhere(choke_mask)
-    
+
     # Start with highest gradient magnitude points
     choke_values = [(grad_mag_norm[r, c], r, c) for r, c in choke_points]
     choke_values.sort(reverse=True)  # Sort by gradient magnitude (highest first)
-    
+
     # Keep track of selected points
     selected_points = []
-    
+
     # Select points while maintaining minimum distance
     for _, r, c in choke_values:
         # Check if this point is far enough from already selected points
         too_close = False
         for sr, sc in selected_points:
-            if np.sqrt((r - sr)**2 + (c - sc)**2) < min_distance:
+            if np.sqrt((r - sr) ** 2 + (c - sc) ** 2) < min_distance:
                 too_close = True
                 break
-        
+
         if not too_close:
             thinned_mask[r, c] = True
             selected_points.append((r, c))
-    
+
     return np.argwhere(thinned_mask)
+
 
 def detect_checkpoints(elevation_norm, slope_norm, ndvi_norm):
     # Surveillance points need:
@@ -144,10 +149,12 @@ def detect_checkpoints(elevation_norm, slope_norm, ndvi_norm):
     checkpoint_mask = (elevation_norm > 0.5) & (slope_norm < 0.5) & (ndvi_norm < 0.6)
     return np.argwhere(checkpoint_mask)
 
+
 ### ----------------------- A* PATHFINDING -----------------------
 
 def heuristic(a, b):
     return np.linalg.norm(np.array(a) - np.array(b))
+
 
 def create_cost_grid(elevation_norm, slope_norm, ndvi_norm, path_type, randomness=0.0):
     """
@@ -156,26 +163,26 @@ def create_cost_grid(elevation_norm, slope_norm, ndvi_norm, path_type, randomnes
     # Initialize with NaN where original data was NaN
     cost_grid = np.full_like(elevation_norm, np.nan)
     valid_mask = ~np.isnan(elevation_norm)
-    
+
     if path_type == "easy":
         # Easy path: strongly avoid slopes, moderately avoid elevation, don't care much about vegetation
-        cost_grid[valid_mask] = (0.7 * slope_norm[valid_mask] + 
-                               0.2 * elevation_norm[valid_mask] + 
-                               0.1 * (1 - ndvi_norm[valid_mask]))  # Lower vegetation might mean clearer paths
-    
+        cost_grid[valid_mask] = (0.7 * slope_norm[valid_mask] +
+                                 0.2 * elevation_norm[valid_mask] +
+                                 0.1 * (1 - ndvi_norm[valid_mask]))  # Lower vegetation might mean clearer paths
+
     elif path_type == "balanced":
         # Balanced path: equal weights to all factors
-        cost_grid[valid_mask] = (0.4 * slope_norm[valid_mask] + 
-                               0.3 * elevation_norm[valid_mask] + 
-                               0.3 * (1 - ndvi_norm[valid_mask]))
-    
+        cost_grid[valid_mask] = (0.4 * slope_norm[valid_mask] +
+                                 0.3 * elevation_norm[valid_mask] +
+                                 0.3 * (1 - ndvi_norm[valid_mask]))
+
     elif path_type == "tough":
         # Tough path: favor high vegetation (hiding spots), less concerned with slopes
         # This is a path an enemy might take to remain concealed
-        cost_grid[valid_mask] = (0.2 * slope_norm[valid_mask] + 
-                               0.2 * elevation_norm[valid_mask] + 
-                               0.6 * (1 - ndvi_norm[valid_mask]))  # Invert NDVI to make high vegetation preferable
-    
+        cost_grid[valid_mask] = (0.2 * slope_norm[valid_mask] +
+                                 0.2 * elevation_norm[valid_mask] +
+                                 0.6 * (1 - ndvi_norm[valid_mask]))  # Invert NDVI to make high vegetation preferable
+
     # Add randomness if specified
     if randomness > 0 and valid_mask.any():
         # Generate random values in the range [-randomness, randomness]
@@ -184,17 +191,18 @@ def create_cost_grid(elevation_norm, slope_norm, ndvi_norm, path_type, randomnes
         cost_grid[valid_mask] += random_values[valid_mask]
         # Ensure no negative values
         cost_grid[valid_mask] = np.maximum(0.01, cost_grid[valid_mask])
-                               
+
     # Normalize the cost grid again to ensure values are between 0 and 1
     cost_grid = normalize_grid(cost_grid)
-    
+
     # Scale up to make the algorithm work better (A* works with positive costs)
     cost_grid = cost_grid * 10 + 1  # Add 1 to avoid zero costs
-    
+
     # Make NaN areas impassable
     cost_grid[~valid_mask] = 1000
-    
+
     return cost_grid
+
 
 def astar(cost_grid, start, goal):
     nrows, ncols = cost_grid.shape
@@ -225,7 +233,7 @@ def astar(cost_grid, start, goal):
                 # Calculate movement cost (diagonal moves cost more)
                 movement_cost = 1.4 if abs(current[0] - x) + abs(current[1] - y) == 2 else 1.0
                 neighbor_cost = cost_grid[x, y] * movement_cost
-                
+
                 tentative_g = g_score[current] + neighbor_cost
                 if tentative_g < g_score.get(neighbor, float('inf')):
                     came_from[neighbor] = current
@@ -235,34 +243,36 @@ def astar(cost_grid, start, goal):
 
     return []  # no path found
 
+
 ### ----------------------- FIND PATHS -----------------------
 
 # Generate multiple path start/end points for variety
 def generate_path_endpoints(min_lat_idx, min_lon_idx, max_lat_idx, max_lon_idx, num_paths=10):  # Changed from 50 to 10
     """Generate a variety of start and end points for multiple paths"""
     endpoints = []
-    
+
     # First add the original path (furthest corners)
     endpoints.append(((min_lat_idx, min_lon_idx), (max_lat_idx, max_lon_idx)))
-    
+
     # Generate random start/end pairs with minimum distance requirement
     min_distance = (max_lat_idx - min_lat_idx + max_lon_idx - min_lon_idx) * 0.3  # At least 30% of diagonal
-    
+
     while len(endpoints) < num_paths:
         # Generate random start and end points
-        start = (random.randint(min_lat_idx, max_lat_idx), 
-                random.randint(min_lon_idx, max_lon_idx))
-        end = (random.randint(min_lat_idx, max_lat_idx), 
-              random.randint(min_lon_idx, max_lon_idx))
-        
+        start = (random.randint(min_lat_idx, max_lat_idx),
+                 random.randint(min_lon_idx, max_lon_idx))
+        end = (random.randint(min_lat_idx, max_lat_idx),
+               random.randint(min_lon_idx, max_lon_idx))
+
         # Calculate distance between start and end
-        distance = math.sqrt((start[0] - end[0])**2 + (start[1] - end[1])**2)
-        
+        distance = math.sqrt((start[0] - end[0]) ** 2 + (start[1] - end[1]) ** 2)
+
         # Only add if distance is sufficient
         if distance >= min_distance:
             endpoints.append((start, end))
-    
+
     return endpoints
+
 
 # Find valid start and end indices
 min_lat_idx = df['lat_idx'].min()
@@ -282,32 +292,34 @@ all_paths = {
 
 # Calculate multiple paths for each type with slight randomness for variety
 for i, (start, end) in enumerate(path_endpoints):
-    path_id = f"path_{i+1}"
-    print(f"Calculating {path_id} ({i+1}/10)...")  # Updated to reflect 10 paths
+    path_id = f"path_{i + 1}"
+    print(f"Calculating {path_id} ({i + 1}/10)...")  # Updated to reflect 10 paths
 
     # Add randomness factor that decreases with each type
     # More randomness for easy paths, less for tough paths
     easy_randomness = 0.2
     balanced_randomness = 0.15
     tough_randomness = 0.1
-    
+
     # Create cost grids with randomness
     easy_cost_grid = create_cost_grid(elevation_norm, slope_norm, ndvi_norm, "easy", randomness=easy_randomness)
-    balanced_cost_grid = create_cost_grid(elevation_norm, slope_norm, ndvi_norm, "balanced", randomness=balanced_randomness)
+    balanced_cost_grid = create_cost_grid(elevation_norm, slope_norm, ndvi_norm, "balanced",
+                                          randomness=balanced_randomness)
     tough_cost_grid = create_cost_grid(elevation_norm, slope_norm, ndvi_norm, "tough", randomness=tough_randomness)
 
     # Calculate paths
     easy_path = astar(easy_cost_grid, start, end)
     balanced_path = astar(balanced_cost_grid, start, end)
     tough_path = astar(tough_cost_grid, start, end)
-    
+
     # Store paths with their respective IDs if they exist
     if easy_path:
-        all_paths["easy"].append({"id": f"easy_{i+1}", "path": easy_path, "start": start, "end": end})
+        all_paths["easy"].append({"id": f"easy_{i + 1}", "path": easy_path, "start": start, "end": end})
     if balanced_path:
-        all_paths["balanced"].append({"id": f"balanced_{i+1}", "path": balanced_path, "start": start, "end": end})
+        all_paths["balanced"].append({"id": f"balanced_{i + 1}", "path": balanced_path, "start": start, "end": end})
     if tough_path:
-        all_paths["tough"].append({"id": f"tough_{i+1}", "path": tough_path, "start": start, "end": end})
+        all_paths["tough"].append({"id": f"tough_{i + 1}", "path": tough_path, "start": start, "end": end})
+
 
 # Get coordinates for a point
 def get_lat_lon(idx_tuple):
@@ -316,6 +328,7 @@ def get_lat_lon(idx_tuple):
         return subset.values[0]
     else:
         return (None, None)
+
 
 ### ----------------------- DETECT TACTICAL POINTS -----------------------
 
@@ -355,19 +368,21 @@ hiding_layer = folium.FeatureGroup(name="Hiding Spots", show=True)
 choke_layer = folium.FeatureGroup(name="Choke Points", show=True)
 surveillance_layer = folium.FeatureGroup(name="Surveillance Points", show=True)
 
+
 # Define a function to calculate distance between two points using Haversine formula
 def haversine_distance(lat1, lon1, lat2, lon2):
     """Calculate the great-circle distance between two points on Earth in kilometers."""
     # Convert decimal degrees to radians
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
-    
+
     # Haversine formula
     dlon = lon2 - lon1
     dlat = lat2 - lat1
-    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
     c = 2 * math.asin(math.sqrt(a))
     r = 6371  # Radius of Earth in kilometers
     return c * r
+
 
 # Store tactical points in their respective layers
 for point in hiding_coords:
@@ -409,12 +424,11 @@ for point in surveillance_coords:
         class_name='tactical-point'
     ).add_to(surveillance_layer)
 
-
-
 # Add layers to map
 hiding_layer.add_to(m)
 choke_layer.add_to(m)
 surveillance_layer.add_to(m)
+
 
 # Helper function to convert path to coordinates
 def path_to_coords(path):
@@ -425,59 +439,61 @@ def path_to_coords(path):
             coords.append([lat, lon])
     return coords
 
+
 # Helper function to draw a path with smoothing
 def draw_path(path_dict, color, path_type, opacity=0.8):
     """Draw a path with given color, type and opacity"""
     path = path_dict["path"]
     path_id = path_dict["id"]
-    
+
     if not path:
         return None
-    
+
     # Get coordinates for path points
     path_coords = path_to_coords(path)
-    
+
     if len(path_coords) > 2:
         # Extract coordinates for spline interpolation
         lats = [p[0] for p in path_coords]
         lons = [p[1] for p in path_coords]
-        
+
         # Create spline interpolation
         t = np.linspace(0, 1, len(path_coords))
         lat_spline = CubicSpline(t, lats)
         lon_spline = CubicSpline(t, lons)
-        
+
         # Generate smooth path
         t_smooth = np.linspace(0, 1, 100)
         smooth_lats = lat_spline(t_smooth)
         smooth_lons = lon_spline(t_smooth)
-        
+
         # Create smooth path coordinates
         smooth_path = [[lat, lon] for lat, lon in zip(smooth_lats, smooth_lons)]
-        
+
         # Draw the smooth path
         polyline = folium.PolyLine(
-            smooth_path, 
-            color=color, 
-            weight=3.5, 
-            opacity=opacity,
-            tooltip=f"{path_type.capitalize()} Path {path_id}",
-            name=path_id
-        )
-        
-        return polyline
-    else:
-        # If not enough points for spline, draw direct path
-        polyline = folium.PolyLine(
-            path_coords, 
-            color=color, 
+            smooth_path,
+            color=color,
             weight=3.5,
             opacity=opacity,
             tooltip=f"{path_type.capitalize()} Path {path_id}",
             name=path_id
         )
-        
+
         return polyline
+    else:
+        # If not enough points for spline, draw direct path
+        polyline = folium.PolyLine(
+            path_coords,
+            color=color,
+            weight=3.5,
+            opacity=opacity,
+            tooltip=f"{path_type.capitalize()} Path {path_id}",
+            name=path_id
+        )
+
+        return polyline
+
 
 # Create path feature groups
 easy_paths_group = folium.FeatureGroup(name="Easy Paths", show=True)
@@ -554,7 +570,7 @@ function resetAllPaths() {
             path.setStyle({opacity: 0.8});
         }
     });
-    
+
     // Hide all tactical points
     document.querySelectorAll('.tactical-point').forEach(marker => {
         marker.style.display = 'none';
@@ -565,18 +581,18 @@ function resetAllPaths() {
 function handlePathClick(e) {
     const pathId = e.target.options.name;
     const pathCoords = e.target.getLatLngs().map(ll => [ll.lat, ll.lng]);
-    
+
     // Reset all paths first
     resetAllPaths();
-    
+
     // Make clicked path fully opaque
     e.target.setStyle({opacity: 1.0});
-    
+
     // Show only tactical points within 5km of this path
     Object.keys(tacticalPoints).forEach(pointId => {
         const point = tacticalPoints[pointId];
         const nearPath = isPointNearPath(point, pathCoords, 5);
-        
+
         if (nearPath) {
             document.getElementById(pointId).style.display = 'block';
         } else {
@@ -589,7 +605,7 @@ function handlePathClick(e) {
 document.addEventListener('DOMContentLoaded', function() {
     // Registry for all path polylines
     const polylines = document.querySelectorAll('path.leaflet-interactive');
-    
+
     polylines.forEach(function(polyline) {
         if (polyline._leaflet_id) {
             // Add click handler
@@ -610,7 +626,7 @@ document.addEventListener('DOMContentLoaded', function() {
             marker.id = markerId;
             marker.classList.add('tactical-point');
             marker.style.display = 'none';  // Hide initially
-            
+
             // Try to get coordinates
             const leafletObj = window.map._layers[marker._leaflet_id];
             if (leafletObj && leafletObj._latlng) {
@@ -659,6 +675,7 @@ m.save("outputs/map.html")
 
 # Open the map automatically in the default web browser
 import webbrowser
+
 map_path = os.path.abspath("outputs/map.html")
 webbrowser.open('file://' + map_path)
 
@@ -676,41 +693,3 @@ print(f"  - Blue: Balanced paths ({len(all_paths['balanced'])} paths)")
 print(f"  - Red: Tough paths ({len(all_paths['tough'])} paths, potential enemy routes)")
 print("  - Total: {0} paths".format(len(all_paths['easy']) + len(all_paths['balanced']) + len(all_paths['tough'])))
 print("----------------------------")
-print("Interactive features:")
-print("  - Click on any path to highlight it and show nearby tactical points")
-print("  - Only tactical points within 5km of the selected path will be visible")
-print("  - By default, only tough/enemy paths are fully visible")
-print("----------------------------")
-
-### -----------------------
-### ----------------------- SAVE TACTICAL DATA -----------------------
-import json
-
-def get_coordinates_from_indices(indices):
-    """Convert grid indices to lat/lon coordinates"""
-    coordinates = []
-    for r, c in indices:
-        subset = df[(df.lat_idx == r) & (df.lon_idx == c)][["lat", "lon"]]
-        if not subset.empty:
-            coordinates.append(subset.values[0].tolist())
-    return coordinates
-
-tactical_data = {
-    "paths": {
-        "easy": get_coordinates_from_indices(easy_path),
-        "balanced": get_coordinates_from_indices(balanced_path),
-        "tough": get_coordinates_from_indices(tough_path)
-    },
-    "tactical_points": {
-        "hiding_spots": get_coordinates_from_indices(hiding),
-        "choke_points": get_coordinates_from_indices(choke),
-        "surveillance_points": get_coordinates_from_indices(checkpoints)
-    }
-}
-
-# Save to JSON file
-os.makedirs("outputs", exist_ok=True)
-with open("outputs/tactical_data.json", "w") as f:
-    json.dump(tactical_data, f, indent=2)
-
-print("✅ Tactical data saved to outputs/tactical_data.json")
