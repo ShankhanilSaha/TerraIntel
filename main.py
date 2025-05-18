@@ -1,5 +1,13 @@
 import json
 import requests
+import os
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+load_dotenv()
+
 
 # === Constants ===
 API_KEY = "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"
@@ -68,6 +76,15 @@ def get_chat_response(chat_history):
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]
 
+def run_cli_mode():
+    """Run the application in CLI mode and return the output"""
+    output = []
+    tactical_data, terrain_data, map_html = load_inputs()
+
+    output.append("Choose your strategy mode (stealthy / fast / loud):")
+    strategy_mode = input("> ").strip().lower()
+    if strategy_mode not in ["stealthy", "fast", "loud"]:
+        output.append("Invalid strategy mode. Defaulting to 'stealthy'.")
 def main():
     tactical_data, terrain_data, map_html = load_inputs()
 
@@ -84,6 +101,13 @@ def main():
         {"role": "user", "content": prompt}
     ]
 
+
+    output.append("\nGenerating war plans... please wait...\n")
+    plans_response = get_chat_response(chat_history)
+    chat_history.append({"role": "assistant", "content": plans_response})
+
+    output.append(plans_response)
+    output.append("\n--- War plans generated. You can now chat with the AI. Type 'exit' to quit. ---\n")
     print("\nGenerating war plans... please wait...\n")
     plans_response = get_chat_response(chat_history)
     chat_history.append({"role": "assistant", "content": plans_response})
@@ -91,17 +115,118 @@ def main():
     print(plans_response)
     print("\n--- War plans generated. You can now chat with the AI. Type 'exit' to quit. ---\n")
 
+
     # Chat loop
     while True:
         user_message = input("You: ").strip()
+
+        output.append(f"You: {user_message}")
+        
+        if user_message.lower() == "exit":
+            output.append("Exiting chat. Goodbye!")
+
         if user_message.lower() == "exit":
             print("Exiting chat. Goodbye!")
+
             break
 
         chat_history.append({"role": "user", "content": user_message})
 
         try:
             reply = get_chat_response(chat_history)
+
+            output.append(f"AI: {reply}\n")
+            chat_history.append({"role": "assistant", "content": reply})
+        except Exception as e:
+            output.append(f"Error during chat response: {e}")
+            break
+
+    return "\n".join(output), chat_history
+
+# FastAPI app for web interface
+app = FastAPI()
+
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class StrategyRequest(BaseModel):
+    strategy_mode: str
+
+class ChatRequest(BaseModel):
+    chat_history: list
+    user_message: str
+
+@app.post("/generate-strategy")
+async def generate_strategy(request: StrategyRequest):
+    try:
+        tactical_data, terrain_data, map_html = load_inputs()
+        prompt = build_prompt(tactical_data, terrain_data, map_html, request.strategy_mode)
+
+        chat_history = [
+            {"role": "system", "content": "You are a strategic military planner AI."},
+            {"role": "user", "content": prompt}
+        ]
+
+        output = [
+            "\n=== TerraIntel Strategy Generator ===",
+            f"\nStrategy mode selected: {request.strategy_mode.upper()}",
+            "\nGenerating war plans... please wait...\n"
+        ]
+
+        plans_response = get_chat_response(chat_history)
+        chat_history.append({"role": "assistant", "content": plans_response})
+        
+        output.append(plans_response)
+        output.append("\n--- War plans generated. You can now chat with the AI. Type 'exit' to quit. ---\n")
+
+        return {
+            "success": True,
+            "output": "\n".join(output),
+            "chat_history": chat_history
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat")
+async def chat(request: ChatRequest):
+    try:
+        user_message = request.user_message
+        chat_history = request.chat_history
+
+        if user_message.lower() == "exit":
+            return {
+                "success": True,
+                "reply": "Exiting chat. Goodbye!",
+                "chat_history": chat_history,
+                "should_exit": True
+            }
+
+        chat_history.append({"role": "user", "content": user_message})
+        reply = get_chat_response(chat_history)
+        chat_history.append({"role": "assistant", "content": reply})
+
+        return {
+            "success": True,
+            "reply": reply,
+            "chat_history": chat_history,
+            "should_exit": False
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    # If run directly, use CLI mode
+    output, _ = run_cli_mode()
+    print(output) 
+
             print(f"AI: {reply}\n")
             chat_history.append({"role": "assistant", "content": reply})
         except Exception as e:
