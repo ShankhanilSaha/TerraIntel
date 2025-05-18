@@ -1,9 +1,5 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import json
 import requests
-import os
 
 # === Constants ===
 API_KEY = "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"
@@ -15,26 +11,6 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-app = FastAPI()
-
-# Enable CORS for frontend testing
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Use specific domains in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# === Request Models ===
-class StrategyRequest(BaseModel):
-    strategy_mode: str
-
-class ChatRequest(BaseModel):
-    chat_history: list
-    user_message: str
-
-# === Helper Functions ===
 def load_inputs():
     with open("outputs/tactical_data.json") as f:
         tactical_data = json.load(f)
@@ -75,7 +51,9 @@ Based on these inputs, generate 5 distinct, extremely elaborated strategic WAR P
 - Counter-strategy recommendation
 - Terrain advantages or risks
 
-Label the plans as PLAN 1 through PLAN 5. Each should be clear, detailed, and actionable.
+Label the plans as PLAN 1 through PLAN 5. Each plan must be clear, detailed, and actionable.
+
+**IMPORTANT:** Format all output in a neat, easy-to-read table with proper headers and alignment, suitable for direct use in reports or presentations.
 """
     return prompt
 
@@ -90,48 +68,45 @@ def get_chat_response(chat_history):
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]
 
-# === API Endpoints ===
-@app.post("/generate-plans")
-def generate_plans(request: StrategyRequest):
-    try:
-        tactical_data, terrain_data, map_html = load_inputs()
-        prompt = build_prompt(tactical_data, terrain_data, map_html, request.strategy_mode)
+def main():
+    tactical_data, terrain_data, map_html = load_inputs()
 
-        chat_history = [
-            {"role": "system", "content": "You are a strategic military planner AI."},
-            {"role": "user", "content": prompt}
-        ]
+    print("Choose your strategy mode (stealthy / fast / loud):")
+    strategy_mode = input("> ").strip().lower()
+    if strategy_mode not in ["stealthy", "fast", "loud"]:
+        print("Invalid strategy mode. Defaulting to 'stealthy'.")
+        strategy_mode = "stealthy"
 
-        response = get_chat_response(chat_history)
-        chat_history.append({"role": "assistant", "content": response})
+    prompt = build_prompt(tactical_data, terrain_data, map_html, strategy_mode)
 
-        return {
-            "plans": response,
-            "chat_history": chat_history
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    chat_history = [
+        {"role": "system", "content": "You are a strategic military planner AI."},
+        {"role": "user", "content": prompt}
+    ]
 
-@app.post("/chat")
-def continue_chat(request: ChatRequest):
-    try:
-        print("Received user message:", request.user_message)
-        print("Chat history length:", len(request.chat_history))
+    print("\nGenerating war plans... please wait...\n")
+    plans_response = get_chat_response(chat_history)
+    chat_history.append({"role": "assistant", "content": plans_response})
 
-        updated_history = request.chat_history + [
-            {"role": "user", "content": request.user_message}
-        ]
+    print(plans_response)
+    print("\n--- War plans generated. You can now chat with the AI. Type 'exit' to quit. ---\n")
 
-        reply = get_chat_response(updated_history)
-        updated_history.append({"role": "assistant", "content": reply})
+    # Chat loop
+    while True:
+        user_message = input("You: ").strip()
+        if user_message.lower() == "exit":
+            print("Exiting chat. Goodbye!")
+            break
 
-        print("Reply from model:", reply[:200])  # Preview only
+        chat_history.append({"role": "user", "content": user_message})
 
-        return {
-            "reply": reply,
-            "chat_history": updated_history
-        }
-    except Exception as e:
-        print("Error in /chat:", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        try:
+            reply = get_chat_response(chat_history)
+            print(f"AI: {reply}\n")
+            chat_history.append({"role": "assistant", "content": reply})
+        except Exception as e:
+            print(f"Error during chat response: {e}")
+            break
 
+if __name__ == "__main__":
+    main()
