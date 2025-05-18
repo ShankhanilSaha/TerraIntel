@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TerraIntel - Strategy Generator</title>
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --primary-dark: #2563eb;
+            --success: #10b981;
+            --error: #ef4444;
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --text: #f1f5f9;
+            --text-light: #94a3b8;
+            --border: #334155;
+            --table-stripe: #1e293b;
+            --table-header: #334155;
+            --scrollbar-track: #1e293b;
+            --scrollbar-thumb: #475569;
+            --scrollbar-thumb-hover: #64748b;
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            margin-bottom: 30px;
+            text-align: center;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        .header h1 {
+            color: var(--text);
+            font-size: 2.5rem;
+            margin: 0;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 24px;
+        }
+
+        .strategy-mode {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .mode-button {
+            flex: 1;
+            background: var(--card-bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .mode-button:hover {
+            background: var(--primary-dark);
+            border-color: var(--primary-dark);
+        }
+
+        .mode-button.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background: var(--primary-dark);
+        }
+
+        button:disabled {
+            background: var(--text-light);
+            cursor: not-allowed;
+        }
+
+        #terminal {
+            background: var(--card-bg);
+            color: var(--text);
+            padding: 24px;
+            border-radius: 12px;
+            height: 600px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+
+        #terminal::-webkit-scrollbar {
+            width: 12px;
+        }
+
+        #terminal::-webkit-scrollbar-track {
+            background: var(--scrollbar-track);
+            border-radius: 6px;
+        }
+
+        #terminal::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
+            border-radius: 6px;
+        }
+
+        #terminal::-webkit-scrollbar-thumb:hover {
+            background: var(--scrollbar-thumb-hover);
+        }
+
+        .chat-input {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .chat-input input {
+            flex-grow: 1;
+            background: var(--card-bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        }
+
+        .chat-input input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        }
+
+        th, td {
+            border: 1px solid var(--border);
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background: var(--table-header);
+            color: var(--text);
+            font-weight: bold;
+        }
+
+        tr:nth-child(even) {
+            background: var(--table-stripe);
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: var(--text-light);
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .blink {
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        .coordinates-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .input-group label {
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 500;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        .input-group input {
+            background: var(--card-bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .input-group input::-webkit-outer-spin-button,
+        .input-group input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .input-group input[type=number] {
+            -moz-appearance: textfield;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>TerraIntel Strategy Generator</h1>
+        </div>
+
+        <div class="card">
+            <div class="strategy-mode">
+                <button class="mode-button active" data-mode="stealthy">STEALTHY</button>
+                <button class="mode-button" data-mode="fast">FAST</button>
+                <button class="mode-button" data-mode="loud">LOUD</button>
+            </div>
+
+            <div class="coordinates-grid">
+                <div class="input-group">
+                    <label for="lat1">Starting Latitude</label>
+                    <input type="number" id="lat1" step="any" value="40.7128" placeholder="e.g. 40.7128">
+                </div>
+                <div class="input-group">
+                    <label for="lon1">Starting Longitude</label>
+                    <input type="number" id="lon1" step="any" value="-74.0060" placeholder="e.g. -74.0060">
+                </div>
+                <div class="input-group">
+                    <label for="lat2">Ending Latitude</label>
+                    <input type="number" id="lat2" step="any" value="40.7580" placeholder="e.g. 40.7580">
+                </div>
+                <div class="input-group">
+                    <label for="lon2">Ending Longitude</label>
+                    <input type="number" id="lon2" step="any" value="-73.9855" placeholder="e.g. -73.9855">
+                </div>
+            </div>
+
+            <button id="generate" onclick="generateStrategy()">Generate War Plans</button>
+        </div>
+
+        <div id="terminal"></div>
+        
+        <div class="chat-input">
+            <input type="text" id="question" placeholder="Ask a follow-up question..." onkeypress="handleKeyPress(event)">
+            <button onclick="askQuestion()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        // Generate a unique session ID
+        const sessionId = Math.random().toString(36).substring(2);
+        let selectedMode = 'stealthy';
+
+        // Mode selection
+        document.querySelectorAll('.mode-button').forEach(button => {
+            button.addEventListener('click', () => {
+                document.querySelectorAll('.mode-button').forEach(b => b.classList.remove('active'));
+                button.classList.add('active');
+                selectedMode = button.dataset.mode;
+            });
+        });
+
+        function appendToTerminal(text) {
+            const terminal = document.getElementById('terminal');
+            terminal.innerHTML += text;
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function clearTerminal() {
+            document.getElementById('terminal').innerHTML = '';
+        }
+
+        async function generateStrategy() {
+            try {
+                const lat1 = parseFloat(document.getElementById('lat1').value);
+                const lon1 = parseFloat(document.getElementById('lon1').value);
+                const lat2 = parseFloat(document.getElementById('lat2').value);
+                const lon2 = parseFloat(document.getElementById('lon2').value);
+
+                // Validate coordinates
+                if (isNaN(lat1) || isNaN(lon1) || isNaN(lat2) || isNaN(lon2)) {
+                    appendToTerminal('\nError: Please enter valid coordinates\n');
+                    return;
+                }
+
+                clearTerminal();
+                document.getElementById('generate').disabled = true;
+                appendToTerminal('Generating war plans... please wait...\n');
+
+                const response = await fetch('/generate_strategy', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-ID': sessionId
+                    },
+                    body: JSON.stringify({ 
+                        strategy_mode: selectedMode,
+                        lat1,
+                        lon1,
+                        lat2,
+                        lon2
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    clearTerminal();
+                    appendToTerminal(data.cli_output);
+                    document.getElementById('question').disabled = false;
+                    document.getElementById('question').focus();
+                } else {
+                    appendToTerminal(`\nError: ${data.error}\n`);
+                }
+            } catch (error) {
+                appendToTerminal(`\nError: ${error.message}\n`);
+            } finally {
+                document.getElementById('generate').disabled = false;
+            }
+        }
+
+        async function askQuestion() {
+            const questionInput = document.getElementById('question');
+            const question = questionInput.value.trim();
+            
+            if (!question) return;
+            
+            try {
+                questionInput.disabled = true;
+                
+                const response = await fetch('/ask_question', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-ID': sessionId
+                    },
+                    body: JSON.stringify({ question })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    clearTerminal();
+                    appendToTerminal(data.cli_output);
+                    
+                    if (data.response === "Chat session ended.") {
+                        questionInput.value = '';
+                        questionInput.disabled = true;
+                        return;
+                    }
+                } else {
+                    appendToTerminal(`\nError: ${data.error}\n`);
+                }
+            } catch (error) {
+                appendToTerminal(`\nError: ${error.message}\n`);
+            } finally {
+                questionInput.value = '';
+                questionInput.disabled = false;
+                questionInput.focus();
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                askQuestion();
+            }
+        }
+
+        // Format tables in terminal output
+        function formatTables() {
+            const terminal = document.getElementById('terminal');
+            const content = terminal.innerHTML;
+            
+            // Replace markdown tables with HTML tables
+            const formattedContent = content.replace(/\|([^|]+)\|/g, (match, cells) => {
+                const row = cells.split('|').map(cell => cell.trim());
+                return `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`;
+            });
+            
+            terminal.innerHTML = formattedContent;
+        }
+
+        // Initialize
+        document.getElementById('question').disabled = true;
+    </script>
+</body>
+</html> 
