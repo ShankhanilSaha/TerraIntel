@@ -1,4 +1,4 @@
-// Add this import at the top of your file
+
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -38,17 +38,17 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    // ⬇️ This block has been removed
-    // kotlinOptions {
-    //     jvmTarget = "11"
-    // }
+    
+    
+    
+    
 
     buildFeatures {
         compose = true
     }
 }
 
-// ⬇️ This is the new, correct way to set the JVM target
+
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_11)
@@ -73,23 +73,23 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     implementation("androidx.compose.material:material-icons-extended-android:1.6.7")
 
-    // Coroutines
+    
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
 
-    // ViewModel & Lifecycle
+    
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
 
-    // Ktor
+    
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.android)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.ktor.client.logging)
 
-    // Location Services
+    
     implementation(libs.play.services.location)
 
 }

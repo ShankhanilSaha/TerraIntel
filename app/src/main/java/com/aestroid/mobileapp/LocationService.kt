@@ -20,17 +20,17 @@ import com.aestroid.mobileapp.UnitConfig
 class LocationService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // The main client for getting location updates
+    
     private lateinit var fusedLocationClient: FusedLocationProviderClient
 
-    // The callback object that will receive location updates
+    
     private lateinit var locationCallback: LocationCallback
 
     override fun onCreate() {
         super.onCreate()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        // Initialize the location callback
+        
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
                 super.onLocationResult(locationResult)
@@ -40,8 +40,8 @@ class LocationService : Service() {
                     val lon = location.longitude
                     Log.d("LocationService", "New location: $lat, $lon")
 
-                    // We got a location. Launch a coroutine in our service's scope
-                    // to call the DataRepository with unit identification
+                    
+                    
                     serviceScope.launch {
                         val unitId = UnitConfig.getUnitId(this@LocationService)
                         val unitType = UnitConfig.getUnitType(this@LocationService)
@@ -53,68 +53,68 @@ class LocationService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // This is called when the service is started (e.g., from the UI)
+        
 
-        // 1. Create the notification
+        
         val notification = createNotification()
 
-        // 2. Start the service in the foreground
-        // The ID (1) must be a non-zero integer.
+        
+        
         startForeground(1, notification)
 
-        // 3. Start requesting location updates
+        
         startLocationUpdates()
 
-        // START_STICKY tells the system to restart the service if it gets killed
+        
         return START_STICKY
     }
 
     private fun startLocationUpdates() {
-        // Check if we have permission. This is crucial.
+        
         if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
             ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
 
             Log.e("LocationService", "Location permission not granted. Stopping service.")
-            stopSelf() // Stop the service if permissions are missing
+            stopSelf() 
             return
         }
 
-        // Configure how often we want location updates
+        
         val locationRequest = LocationRequest.create().apply {
-            interval = 10000 // 10 seconds
-            fastestInterval = 5000 // 5 seconds
+            interval = 10000 
+            fastestInterval = 5000 
             priority = Priority.PRIORITY_HIGH_ACCURACY
         }
 
-        // Start listening for updates
+        
         fusedLocationClient.requestLocationUpdates(
             locationRequest,
             locationCallback,
-            Looper.getMainLooper() // The thread to receive updates on
+            Looper.getMainLooper() 
         )
     }
 
     private fun createNotification(): Notification {
-        // Build the notification that will be shown to the user
-        return NotificationCompat.Builder(this, "location") // "location" is the channel ID
+        
+        return NotificationCompat.Builder(this, "location") 
             .setContentTitle("Location Tracking Active")
             .setContentText("Your location is being sent to the server.")
-            // TODO: Replace with a proper notification icon (white/transparent icon)
-            // Create a drawable resource with a white icon for better visibility
+            
+            
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setOngoing(true) // Makes it non-dismissible
+            .setOngoing(true) 
             .build()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        // Stop location updates
+        
         fusedLocationClient.removeLocationUpdates(locationCallback)
-        // Cancel all coroutines
+        
         serviceScope.cancel()
     }
 
-    // This is a "Started Service", not a "Bound Service", so we return null.
+    
     override fun onBind(intent: Intent?): IBinder? {
         return null
     }

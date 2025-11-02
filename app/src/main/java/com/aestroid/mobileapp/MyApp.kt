@@ -10,12 +10,12 @@ class MyApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // This only runs on Android 8 (Oreo) or higher
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                "location", // An ID for this channel
-                "Location", // The user-visible name
-                NotificationManager.IMPORTANCE_LOW // Low importance = no sound
+                "location", 
+                "Location", 
+                NotificationManager.IMPORTANCE_LOW 
             )
 
             val notificationManager =

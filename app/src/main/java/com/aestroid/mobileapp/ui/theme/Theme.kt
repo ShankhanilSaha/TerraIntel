@@ -48,9 +48,9 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun AestroidTheme(
-    darkTheme: Boolean = true, // Default to dark theme for orange/black aesthetic
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = false, // Disable dynamic color to use custom orange/black theme
+    darkTheme: Boolean = true, 
+    
+    dynamicColor: Boolean = false, 
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

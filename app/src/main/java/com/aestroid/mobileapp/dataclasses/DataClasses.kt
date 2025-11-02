@@ -8,7 +8,7 @@ data class LocationRequest(
     val unitType: String,
     val latitude: Double,
     val longitude: Double,
-    val timestamp: String // IST format: "yyyy-MM-dd HH:mm:ss"
+    val timestamp: String 
 )
 
 @Serializable

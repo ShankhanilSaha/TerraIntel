@@ -33,7 +33,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aestroid.mobileapp.ViewModel.MainViewModel
 import com.aestroid.mobileapp.UnitConfig
 
-@OptIn(ExperimentalMaterial3Api::class) // Needed for TopAppBar
+@OptIn(ExperimentalMaterial3Api::class) 
 @Composable
 fun MainScreen(
     viewModel: MainViewModel = viewModel()
@@ -41,23 +41,23 @@ fun MainScreen(
     val context = LocalContext.current
     val locationStatus by viewModel.locationStatus.collectAsState()
     
-    // Unit configuration state
+    
     var unitIdText by remember { mutableStateOf(UnitConfig.getUnitId(context)) }
     var unitTypeText by remember { mutableStateOf(UnitConfig.getUnitType(context)) }
     var showUnitConfig by remember { mutableStateOf(false) }
     
-    // SnackBar host state for user feedback
+    
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Permission denied state
+    
     var showPermissionDeniedSnackbar by remember { mutableStateOf(false) }
     var showBackgroundPermissionDeniedSnackbar by remember { mutableStateOf(false) }
     var showBackgroundPermissionRationale by remember { mutableStateOf(false) }
 
-    // Check if we're on Android 10+ (API 29+)
+    
     val isAndroid10Plus = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
 
-    // Helper function to check foreground location permission
+    
     fun hasForegroundLocationPermission(): Boolean {
         return ContextCompat.checkSelfPermission(
             context,
@@ -69,7 +69,7 @@ fun MainScreen(
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    // Helper function to check background location permission
+    
     fun hasBackgroundLocationPermission(): Boolean {
         return if (isAndroid10Plus) {
             ContextCompat.checkSelfPermission(
@@ -77,11 +77,11 @@ fun MainScreen(
                 Manifest.permission.ACCESS_BACKGROUND_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
         } else {
-            true // Pre-Android 10 doesn't need separate background permission
+            true 
         }
     }
 
-    // Foreground location permission launcher
+    
     val foregroundLocationLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
         onResult = { permissions ->
@@ -94,43 +94,43 @@ fun MainScreen(
             )
 
             if (foregroundGranted) {
-                // Foreground permission granted - check if we need background permission
+                
                 if (isAndroid10Plus && !hasBackgroundLocationPermission()) {
-                    // Request background location separately
+                    
                     showBackgroundPermissionRationale = true
                 } else {
-                    // All permissions granted, start service
+                    
                     startLocationService(context)
                 }
             } else {
-                // Foreground permission denied
+                
                 showPermissionDeniedSnackbar = true
             }
         }
     )
 
-    // Background location permission launcher (Android 10+)
+    
     val backgroundLocationLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            // Background permission granted, start service
+            
             startLocationService(context)
         } else {
-            // Background permission denied but we can still work with foreground
+            
             showBackgroundPermissionDeniedSnackbar = true
-            // Still start service with foreground-only permission
+            
             startLocationService(context)
         }
         showBackgroundPermissionRationale = false
     }
 
-    // Show rationale dialog for background location permission
+    
     if (showBackgroundPermissionRationale) {
         AlertDialog(
             onDismissRequest = {
                 showBackgroundPermissionRationale = false
-                // Start service anyway with foreground permission
+                
                 startLocationService(context)
             },
             title = { Text("Background Location Required") },
@@ -156,7 +156,7 @@ fun MainScreen(
                 TextButton(
                     onClick = {
                         showBackgroundPermissionRationale = false
-                        // Start with foreground-only permission
+                        
                         startLocationService(context)
                     }
                 ) {
@@ -166,7 +166,7 @@ fun MainScreen(
         )
     }
 
-    // Show snackbar when permission is denied
+    
     if (showPermissionDeniedSnackbar) {
         androidx.compose.runtime.LaunchedEffect(snackbarHostState) {
             snackbarHostState.showSnackbar(
@@ -177,7 +177,7 @@ fun MainScreen(
         }
     }
     
-    // Show snackbar when background permission is denied
+    
     if (showBackgroundPermissionDeniedSnackbar) {
         androidx.compose.runtime.LaunchedEffect(snackbarHostState) {
             snackbarHostState.showSnackbar(
@@ -188,7 +188,7 @@ fun MainScreen(
         }
     }
 
-    // --- UI Layout ---
+    
     Scaffold(
         topBar = {
             TopAppBar(
@@ -219,7 +219,7 @@ fun MainScreen(
         ) {
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Unit Configuration Card
+            
             if (showUnitConfig) {
                 Card(
                     modifier = Modifier
@@ -271,7 +271,7 @@ fun MainScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- Location Status Card ---
+            
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -352,21 +352,21 @@ fun MainScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- Control Buttons ---
+            
             Button(
                 onClick = {
-                    // Check if we already have foreground location permission
+                    
                     if (hasForegroundLocationPermission()) {
-                        // Already have foreground permission, check background
+                        
                         if (isAndroid10Plus && !hasBackgroundLocationPermission()) {
-                            // Need to request background permission
+                            
                             showBackgroundPermissionRationale = true
                         } else {
-                            // All permissions granted, start service
+                            
                             startLocationService(context)
                         }
                     } else {
-                        // Request foreground location permission first
+                        
                         foregroundLocationLauncher.launch(
                             arrayOf(
                                 Manifest.permission.ACCESS_FINE_LOCATION,
@@ -385,7 +385,7 @@ fun MainScreen(
     }
 }
 
-// Helper function to start the service
+
 private fun startLocationService(context: Context) {
     val intent = Intent(context, LocationService::class.java)
     context.startService(intent)

@@ -34,7 +34,7 @@ object UnitConfig {
             .apply()
     }
 
-    // Common unit types for reference
+    
     object UnitTypes {
         const val TANK = "tank"
         const val HELICOPTER = "helicopter"

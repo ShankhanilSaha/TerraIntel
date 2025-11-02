@@ -17,7 +17,7 @@ object DataRepository {
     }
     
     suspend fun sendLocation(unitId: String, unitType: String, lat: Double, lon: Double) {
-        // Get current timestamp in IST format
+        
         val timestamp = DateTimeHelper.getCurrentISTTimestamp()
         
         val requestBody = LocationRequest(

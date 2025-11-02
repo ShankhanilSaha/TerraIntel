@@ -27,7 +27,7 @@ class MainViewModel: ViewModel() {
     }
     
     init {
-        // Observe location update flow
+        
         viewModelScope.launch {
             dataRepository.locationUpdateFlow
                 .catch { exception ->
@@ -50,21 +50,21 @@ class MainViewModel: ViewModel() {
         }
     }
     fun onUserSendStatusClick() {
-        // Launch a new coroutine to do the work
+        
         viewModelScope.launch {
-            // 1. Create the request object
+            
             val postData = ApiPost(status = "UserClickedButton")
 
-            // 2. Call the ApiClient's function
-            // (We call ApiClient directly since DataRepository doesn't have this function)
+            
+            
             val result = ApiClient.sendApiPost(postData)
 
-            // 3. Handle the result
+            
             result.onSuccess { apiResponse ->
-                // The POST was successful. Update the UI.
+                
                 processResponse(apiResponse)
             }.onFailure { exception ->
-                // The POST failed. Update the UI to show an error.
+                
                 _uiState.value = StrategyUiState.Error(exception.message ?: "POST Error")
             }
         }
