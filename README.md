@@ -1,4 +1,4 @@
-# WarPlanner Mobile Application
+# TerraIntel Mobile Application
 
 ## Overview
 A tool which takes terrain data from sattelite, drone shots performs analysis and gives optimized routes and plans powered with real-time tracking features for most optimal results.
